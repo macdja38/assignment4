@@ -48,21 +48,10 @@ static struct memoryList *next;
    sz specifies the number of bytes that will be available, in total, for all mymalloc requests.
 */
 
-void search_for_null_rec_f(struct memoryList *current) {
-    if (current->last == head) return;
-    search_for_null_rec_f(current->last);
-}
-
-void search_for_null_rec_b(struct memoryList *current) {
-    if (current->next == head) return;
-    search_for_null_rec_b(current->next);
-}
-
-void search_for_null() {
-    search_for_null_rec_f(head);
-    search_for_null_rec_b(head);
-}
-
+/**
+ * Recursively release the entire linked list
+ * @param current
+ */
 void release_all_rec(struct memoryList *current) {
     if (current->next != head) {
         release_all_rec(current->next);
@@ -70,6 +59,11 @@ void release_all_rec(struct memoryList *current) {
     free(current);
 }
 
+/**
+ * Initialise the memoy into one block in the linked list
+ * @param strategy
+ * @param sz
+ */
 void initmem(strategies strategy, size_t sz) {
     myStrategy = strategy;
 
@@ -93,6 +87,13 @@ void initmem(strategies strategy, size_t sz) {
     next = new;
 }
 
+/**
+ * Split one block of the linked list into 2, marking the start as allocated. If the allocated size fits exactly will simply mark as alocated
+ * and return NULL
+ * @param current
+ * @param size
+ * @return
+ */
 struct memoryList *split_node(struct memoryList *current, size_t size) {
     current->alloc = 1;
     if (current->size != size) {
@@ -103,6 +104,7 @@ struct memoryList *split_node(struct memoryList *current, size_t size) {
 
         new->ptr = current->ptr + size;
 
+        current->next->last = new;
         new->next = current->next;
         new->last = current;
         current->next = new;
@@ -112,11 +114,24 @@ struct memoryList *split_node(struct memoryList *current, size_t size) {
     return NULL;
 }
 
+/**
+ * allocates a block of size_t at the given location and returns the given location
+ * @param current
+ * @param size
+ * @return
+ */
 struct memoryList *allocate_at(struct memoryList *current, size_t size) {
     split_node(current, size);
     return current;
 }
 
+/**
+ * Finds the next chunk of free space
+ * @param current
+ * @param end
+ * @param size
+ * @return
+ */
 struct memoryList *get_next_free(struct memoryList *current, struct memoryList *end, size_t size) {
     if (current->alloc == 1 || current->size < size) {
         if (current->next == end) {
@@ -127,6 +142,11 @@ struct memoryList *get_next_free(struct memoryList *current, struct memoryList *
     return current;
 }
 
+/**
+ * Finds the smallest chuck of free space that is larger than size
+ * @param size
+ * @return
+ */
 struct memoryList *get_best_free(size_t size) {
     struct memoryList *best = NULL;
     struct memoryList *current = head;
@@ -139,6 +159,11 @@ struct memoryList *get_best_free(size_t size) {
     return best;
 }
 
+/**
+ * Finds the largest chunk of free space
+ * @param size
+ * @return
+ */
 struct memoryList *get_worst_free(size_t size) {
     struct memoryList *worst = NULL;
     struct memoryList *current = head;
@@ -151,19 +176,16 @@ struct memoryList *get_worst_free(size_t size) {
     return worst;
 }
 
-void print_memory_rec_prev(struct memoryList *current, int index) {
-    printf("bytes: %zu, allocation status: %i, index: %i\n", current->size, current->alloc, index);
-    if (current == head->last) return;
-    print_memory_rec(current->last, index + 1);
-}
-
+/**
+ * creates a new block at the location given of size and returns a pointer to it
+ * @param current
+ * @param requested
+ * @return
+ */
 void *get_ptr_new_block_at(struct memoryList *current, size_t requested) {
     if (current == NULL) return NULL;
     struct memoryList *allocated = allocate_at(current, requested);
-    printf("-------------- Allocation -------- %zu\n", requested);
-    print_memory_rec_prev(allocated, 0);
     next = allocated->next;
-    search_for_null();
     return allocated->ptr;
 }
 
@@ -175,7 +197,6 @@ void *get_ptr_new_block_at(struct memoryList *current, size_t requested) {
 
 void *mymalloc(size_t requested) {
     assert((int) myStrategy > 0);
-    search_for_null();
 
     switch (myStrategy) {
         case NotSet:
@@ -192,31 +213,31 @@ void *mymalloc(size_t requested) {
     return NULL;
 }
 
+/**
+ * Removes a node from the linked list, freeing it and joining the previous and next node
+ * @param node
+ */
 void remove_list_node(struct memoryList *node) {
     struct memoryList *tempNext = node->next;
     struct memoryList *tempLast = node->last;
-
-    print_memory();
-    print_memory_status();
 
     tempNext->last = node->last;
     tempLast->next = node->next;
 
     tempLast->size = tempLast->size + node->size;
 
-    print_memory();
-    print_memory_status();
-
     if (next == node) {
         next = tempNext;
     }
 
-    print_memory();
-    print_memory_status();
-
     free(node);
 }
 
+/**
+ * traverses the linked list backwards stopping before reaching a used node or if it finds the head
+ * @param current
+ * @return
+ */
 struct memoryList *find_free_start_or_head(struct memoryList *current) {
     if (current->last->alloc == 1 || current == head) {
         return current;
@@ -224,19 +245,25 @@ struct memoryList *find_free_start_or_head(struct memoryList *current) {
     return find_free_start_or_head(current->last);
 }
 
+/**
+ * joins the list node after the current one to the current one if it's not allocated
+ * @param current
+ * @return
+ */
 struct memoryList *join_after(struct memoryList *current) {
     // join after
     while (current->next->alloc == 0 && current->next != head) {
-        search_for_null();
-        printf("current is head %i\n", current->next == head);
         remove_list_node(current->next);
-        search_for_null();
     }
     return current;
 }
 
+/**
+ * Recursively frees a block and cleans the memory around it
+ * @param block
+ * @param current
+ */
 void myfree_rec(void *block, struct memoryList *current) {
-    search_for_null();
     if (current->ptr == block) {
         if (current->alloc == 0) {
             fprintf(stderr, "Error, block already freed");
@@ -250,7 +277,6 @@ void myfree_rec(void *block, struct memoryList *current) {
             myfree_rec(block, current->next);
         }
     }
-    search_for_null();
 }
 
 
@@ -386,16 +412,16 @@ strategies strategyFromString(char *strategy) {
  */
 
 
-void print_memory_rec(struct memoryList *current, int index) {
+void print_memory_rec_f(struct memoryList *current, int index) {
     printf("bytes: %zu, allocation status: %i, index: %i\n", current->size, current->alloc, index);
     if (current->next == head) return;
-    print_memory_rec(current->next, index + 1);
+    print_memory_rec_f(current->next, index + 1);
 }
-
 
 /* Use this function to print out the current contents of memory. */
 void print_memory() {
-    print_memory_rec(head, 0);
+    printf("--memory content--\n");
+    print_memory_rec_f(head, 0);
 }
 
 /* Use this function to track memory allocation performance.  

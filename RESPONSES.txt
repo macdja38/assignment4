@@ -1,7 +1,8 @@
 1) fragmentation of free space, less efficient traversal of memory.
 2) functions that free memory.
 3) next is generally easy to compute, best preserves large blocks, worst preserves holes of even size, first is easy to compute
-4-5 stress test did not complete
+4) Best generally had the largest average free block, probably because it tries to fit each item into the smallest block it will fit in, leaving the larger blocks open
+5) best generally had the largest number of small blocks, probably because it tries to find the closest fit, leaving as small a space possible next to each allocation
 6) With the current system it is not possible as the items using the memory are given only a pointer, if we moved the memory we would not be able effect the code using that pointer.
 7) Would need to provide the user with a lookup function that resolved a fake pointer into a real one, that would allow us to move memory around.
 8) check for a free block after the current block, if the free block exists and is large enough increase it's pointer by the size requested, then increase the current block's size by the size requested.
