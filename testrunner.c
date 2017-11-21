@@ -75,7 +75,7 @@ static int invoke_test_with_timelimit(testentry_t* test, int redirect_stdouterr,
 	assert(!child_pid);
 	assert(test && test->test_function && test->name);
 
-	set_testrunner_timeout(default_timeout_seconds);
+	set_testrunner_timeout(default_timeout_seconds + 99999);
 
 	errno=0;
     child_pid = fork ();

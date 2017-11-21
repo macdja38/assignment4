@@ -5,6 +5,9 @@
 #include "mymem.h"
 #include <time.h>
 
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+#define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
+
 
 /* The main structure for implementing memory allocation.
  * You may change this to fit your implementation.
@@ -15,7 +18,7 @@ struct memoryList {
     struct memoryList *last;
     struct memoryList *next;
 
-    int size;            // How many bytes in this block?
+    size_t size;            // How many bytes in this block?
     char alloc;          // 1 if this block is allocated,
     // 0 if this block is free.
     void *ptr;           // location of block in memory pool.
@@ -45,22 +48,123 @@ static struct memoryList *next;
    sz specifies the number of bytes that will be available, in total, for all mymalloc requests.
 */
 
+void search_for_null_rec_f(struct memoryList *current) {
+    if (current->last == head) return;
+    search_for_null_rec_f(current->last);
+}
+
+void search_for_null_rec_b(struct memoryList *current) {
+    if (current->next == head) return;
+    search_for_null_rec_b(current->next);
+}
+
+void search_for_null() {
+    search_for_null_rec_f(head);
+    search_for_null_rec_b(head);
+}
+
+void release_all_rec(struct memoryList *current) {
+    if (current->next != head) {
+        release_all_rec(current->next);
+    }
+    free(current);
+}
+
 void initmem(strategies strategy, size_t sz) {
     myStrategy = strategy;
 
     /* all implementations will need an actual block of memory to use */
     mySize = sz;
 
-    if (myMemory != NULL) free(myMemory); /* in case this is not the first time initmem2 is called */
-
-    /* TODO: release any other memory you were using for bookkeeping when doing a re-initialization! */
-
+    if (myMemory != NULL) {
+        free(myMemory); /* in case this is not the first time initmem is called */
+        release_all_rec(head);
+    }
 
     myMemory = malloc(sz);
 
-    /* TODO: Initialize memory management structure. */
+    struct memoryList *new = (struct memoryList *) malloc(sizeof(struct memoryList));
+    new->next = new;
+    new->last = new;
+    new->ptr = myMemory;
+    new->size = sz;
+    new->alloc = 0;
+    head = new;
+    next = new;
+}
 
+struct memoryList *split_node(struct memoryList *current, size_t size) {
+    current->alloc = 1;
+    if (current->size != size) {
+        struct memoryList *new = (struct memoryList *) malloc(sizeof(struct memoryList));
+        new->size = current->size - size;
+        current->size = size;
+        new->alloc = 0;
 
+        new->ptr = current->ptr + size;
+
+        new->next = current->next;
+        new->last = current;
+        current->next = new;
+        return new;
+    }
+    current->size = size;
+    return NULL;
+}
+
+struct memoryList *allocate_at(struct memoryList *current, size_t size) {
+    split_node(current, size);
+    return current;
+}
+
+struct memoryList *get_next_free(struct memoryList *current, struct memoryList *end, size_t size) {
+    if (current->alloc == 1 || current->size < size) {
+        if (current->next == end) {
+            return NULL;
+        }
+        return get_next_free(current->next, end, size);
+    }
+    return current;
+}
+
+struct memoryList *get_best_free(size_t size) {
+    struct memoryList *best = NULL;
+    struct memoryList *current = head;
+    do {
+        if (current->alloc == 0 && current->size >= size && (best == NULL || current->size < best->size)) {
+            best = current;
+        }
+        current = current->next;
+    } while (current != head);
+    return best;
+}
+
+struct memoryList *get_worst_free(size_t size) {
+    struct memoryList *worst = NULL;
+    struct memoryList *current = head;
+    do {
+        if (current->alloc == 0 && current->size >= size && (worst == NULL || current->size > worst->size)) {
+            worst = current;
+        }
+        current = current->next;
+    } while (current != head);
+    return worst;
+}
+
+void print_memory_rec_prev(struct memoryList *current, int index) {
+    printf("bytes: %zu, allocation status: %i, index: %i\n", current->size, current->alloc, index);
+    if (current == head->last) return;
+    print_memory_rec(current->last, index + 1);
+}
+
+void *get_ptr_new_block_at(struct memoryList *current, size_t requested) {
+    if (current == NULL) return NULL;
+    struct memoryList *allocated = allocate_at(current, requested);
+    printf("-------------- Allocation -------- %zu\n", requested);
+    print_memory_rec_prev(allocated, 0);
+    next = allocated->next;
+    search_for_null();
+    return allocated->ptr;
 }
 
 /* Allocate a block of memory with the requested size.
@@ -71,25 +175,88 @@ void initmem(strategies strategy, size_t sz) {
 
 void *mymalloc(size_t requested) {
     assert((int) myStrategy > 0);
+    search_for_null();
 
     switch (myStrategy) {
         case NotSet:
             return NULL;
         case First:
-            return NULL;
+            return get_ptr_new_block_at(get_next_free(head, head, requested), requested);
         case Best:
-            return NULL;
+            return get_ptr_new_block_at(get_best_free(requested), requested);
         case Worst:
-            return NULL;
+            return get_ptr_new_block_at(get_worst_free(requested), requested);
         case Next:
-            return NULL;
+            return get_ptr_new_block_at(get_next_free(next, next, requested), requested);
     }
     return NULL;
+}
+
+void remove_list_node(struct memoryList *node) {
+    struct memoryList *tempNext = node->next;
+    struct memoryList *tempLast = node->last;
+
+    print_memory();
+    print_memory_status();
+
+    tempNext->last = node->last;
+    tempLast->next = node->next;
+
+    tempLast->size = tempLast->size + node->size;
+
+    print_memory();
+    print_memory_status();
+
+    if (next == node) {
+        next = tempNext;
+    }
+
+    print_memory();
+    print_memory_status();
+
+    free(node);
+}
+
+struct memoryList *find_free_start_or_head(struct memoryList *current) {
+    if (current->last->alloc == 1 || current == head) {
+        return current;
+    }
+    return find_free_start_or_head(current->last);
+}
+
+struct memoryList *join_after(struct memoryList *current) {
+    // join after
+    while (current->next->alloc == 0 && current->next != head) {
+        search_for_null();
+        printf("current is head %i\n", current->next == head);
+        remove_list_node(current->next);
+        search_for_null();
+    }
+    return current;
+}
+
+void myfree_rec(void *block, struct memoryList *current) {
+    search_for_null();
+    if (current->ptr == block) {
+        if (current->alloc == 0) {
+            fprintf(stderr, "Error, block already freed");
+        }
+        current->alloc = 0;
+        join_after(find_free_start_or_head(current));
+    } else {
+        if (current->next == head) {
+            fprintf(stderr, "Error, attempted to free block that does not exist");
+        } else {
+            myfree_rec(block, current->next);
+        }
+    }
+    search_for_null();
 }
 
 
 /* Frees a block of memory previously allocated by mymalloc. */
 void myfree(void *block) {
+    myfree_rec(block, head);
     return;
 }
 
@@ -99,34 +266,69 @@ void myfree(void *block) {
  * memory pool this module manages via initmem/mymalloc/myfree. 
  */
 
+int mem_holes_rec(struct memoryList *current) {
+    int total = current->next == head ? 0 : mem_holes_rec(current->next);
+    return total + (current->alloc == 0 ? 1 : 0);
+}
+
 /* Get the number of contiguous areas of free space in memory. */
 int mem_holes() {
-    return 0;
+    return mem_holes_rec(head);
+}
+
+size_t mem_allocated_rec(struct memoryList *current) {
+    size_t total = current->next == head ? 0 : mem_allocated_rec(current->next);
+    return total + (current->alloc == 1 ? current->size : 0);
 }
 
 /* Get the number of bytes allocated */
 int mem_allocated() {
-    return 0;
+    return mem_allocated_rec(head);
+}
+
+size_t mem_free_rec(struct memoryList *current) {
+    size_t total = current->next == head ? 0 : mem_free_rec(current->next);
+    return total + (current->alloc == 0 ? current->size : 0);
 }
 
 /* Number of non-allocated bytes */
 int mem_free() {
-    return 0;
+    return mem_free_rec(head);
+}
+
+size_t mem_largest_free_rec(struct memoryList *current) {
+    size_t currentBest = current->next == head ? 0 : mem_largest_free_rec(current->next);
+    return current->alloc == 0 ? MAX(currentBest, current->size) : currentBest;
 }
 
 /* Number of bytes in the largest contiguous area of unallocated memory */
 int mem_largest_free() {
-    return 0;
+    return mem_largest_free_rec(head);
+}
+
+int mem_small_free_rec(int size, struct memoryList *current) {
+    return (current->next == head ? 0 : mem_small_free_rec(size, current->next)) +
+           (current->alloc == 0 && current->size <= size ? 1 : 0);
 }
 
 /* Number of free blocks smaller than "size" bytes. */
 int mem_small_free(int size) {
-    return 0;
+    return mem_small_free_rec(size, head);
+}
+
+char mem_is_alloc_rec(void *ptr, struct memoryList *current) {
+    if (current->ptr == ptr) {
+        return current->alloc;
+    } else {
+        if (current->next == head) {
+            return 0;
+        }
+        return mem_is_alloc_rec(ptr, current->next);
+    }
 }
 
 char mem_is_alloc(void *ptr) {
-	
-    return 0;
+    return mem_is_alloc_rec(ptr, head);
 }
 
 /* 
@@ -183,9 +385,17 @@ strategies strategyFromString(char *strategy) {
  * be used in tests, but you may find them useful for debugging.
  */
 
+
+void print_memory_rec(struct memoryList *current, int index) {
+    printf("bytes: %zu, allocation status: %i, index: %i\n", current->size, current->alloc, index);
+    if (current->next == head) return;
+    print_memory_rec(current->next, index + 1);
+}
+
+
 /* Use this function to print out the current contents of memory. */
 void print_memory() {
-    return;
+    print_memory_rec(head, 0);
 }
 
 /* Use this function to track memory allocation performance.  

@@ -189,6 +189,7 @@ int test_alloc_1(int argc, char **argv) {
 
 		if (mem_allocated() != correct_alloc)
 		{
+			printf("mem allocated is %d\n", mem_allocated());
 			printf("Allocated memory not reported as %d with %s\n", correct_alloc, strategy_name(strategy));
 			return	1;
 		}
@@ -275,12 +276,16 @@ int test_alloc_2(int argc, char **argv) {
 
 		if (mem_holes() != correct_holes)
 		{
+			print_memory();
+			print_memory_status();
 			printf("Holes counted as %d, should be %d with %s\n", mem_holes(), correct_holes, strategy_name(strategy));
 			return	1;
 		}
 
 		if (mem_small_free(9) != correct_small)
 		{
+			print_memory();
+			print_memory_status();
 			printf("Small holes counted as %d, should be %d with %s\n", mem_small_free(9), correct_small, strategy_name(strategy));
 			return	1;
 		}
@@ -467,6 +472,9 @@ int main(int argc, char **argv)
   if( argc < 2) {
     printf("Usage: mem -test <test> <strategy> | mem -try <arg1> <arg2> ... \n");
     exit(-1);
+  }
+  else if (!strcmp(argv[1],"-stress")) {
+	  return do_stress_tests(argc-1, argv+1);
   }
   else if (!strcmp(argv[1],"-test"))
     return run_memory_tests(argc-1,argv+1);

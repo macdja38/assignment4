@@ -3,5 +3,5 @@ project(assignment4)
 
 set(CMAKE_C_STANDARD 11)
 
-set(SOURCE_FILES mymem.c)
+set(SOURCE_FILES mymem.c memorytests.c testrunner.c)
 add_executable(assignment4 ${SOURCE_FILES})
